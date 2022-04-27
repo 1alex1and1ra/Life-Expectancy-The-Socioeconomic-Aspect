@@ -1,0 +1,191 @@
+---
+title: "STA302 Final Project Phase 3"
+author: "Alexandra Lomovtseva"
+date: "12/17/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Loading packages and data
+```{r, include=FALSE}
+#install.packages("car")
+#library(car)
+#install.packages("leaps")
+#library(leaps)
+library(MASS)
+
+library(tidyverse)
+LifeExpectancy <- read.csv(file = 'Life Expectancy Data.csv')
+
+cleanedLE <- LifeExpectancy %>% 
+  drop_na()
+
+set.seed(1)
+train <- cleanedLE[sample(1:nrow(cleanedLE), 787, replace=F), ]
+test <- cleanedLE[which(!(1:nrow(cleanedLE) %in% 1:nrow(train))),]
+```
+
+# The EDA for train
+```{r}
+library(gridExtra)
+p0<- ggplot(train, aes(x=Status)) + 
+geom_histogram(stat="count") + labs(title = "Distribution of Status", subtitle = "Plot 1")
+
+p1<- ggplot(train, aes(x=Total.expenditure)) + 
+geom_histogram(outlier.colour="black", outlier.shape=16,
+             outlier.size=2, notch=FALSE) + labs(title = "Distribution of Expenditure", subtitle = "Plot 2",  x="Total Expenditure")
+
+p2<-ggplot(train, aes(x=Schooling)) + 
+geom_histogram(outlier.colour="black", outlier.shape=16,
+             outlier.size=2, notch=FALSE) + labs(title = "Distribution of Schooling", subtitle = "Plot 3",  x="Schooling")
+
+p3<-ggplot(train, aes(x=Life.expectancy)) + 
+geom_histogram(outlier.colour="black", outlier.shape=16,
+             outlier.size=2, notch=FALSE) + labs(title = "Distribution of Life Expectancy", subtitle = "Plot 4",  x="Life Expectancy")
+
+grid.arrange(p0, p1, p2, p3, nrow = 2, top="Train dataset")
+
+# Checking the linearity
+q<- pairs(train[,c(4, 14, 21)], labels = c("Life Expectancy", "Total Expenditure", "Schooling"))
+
+q1 <- boxplot(train$Life.expectancy ~ train$Status, main="Status per Life Expectancy", xlab="Control of institution", ylab="Status")
+
+
+```
+# EDA for test
+```{r}
+p0<- ggplot(test, aes(x=Status)) + 
+geom_histogram(stat="count") + labs(title = "Distribution of Status", subtitle = "Plot 5")
+
+p1<- ggplot(test, aes(x=Total.expenditure)) + 
+geom_histogram(outlier.colour="black", outlier.shape=16,
+             outlier.size=2, notch=FALSE) + labs(title = "Distribution of Expenditure", subtitle = "Plot 6",  x="Total Expenditure")
+
+p2<-ggplot(test, aes(x=Schooling)) + 
+geom_histogram(outlier.colour="black", outlier.shape=16,
+             outlier.size=2, notch=FALSE) + labs(title = "Distribution of Schooling", subtitle = "Plot 7",  x="Schooling")
+
+p3<-ggplot(test, aes(x=Life.expectancy)) + 
+geom_histogram(outlier.colour="black", outlier.shape=16,
+             outlier.size=2, notch=FALSE) + labs(title = "Distribution of Life Expectancy", subtitle = "Plot 8",  x="Life Expectancy")
+
+grid.arrange(p0, p1, p2, p3, nrow = 2, top="Train dataset")
+
+# Checking the linearity
+pairs(test[,c(4, 14, 21)], labels = c("Life Expectancy", "Total Expenditure", "Schooling"))
+
+boxplot(test$Life.expectancy ~ test$Status, main="Admission Rate per Control of institution", xlab="Control of institution", ylab="Admission Rate")
+```
+
+
+# Model Diagnostics
+```{r}
+
+mod <- lm(Life.expectancy~Status+Total.expenditure+Schooling,data=train)
+a1<- plot(train$Life.expectancy ~ fitted(mod), main="Y versus Y-hat", xlab="Y-hat", ylab="Y")
+abline(a = 0, b = 1)
+lines(lowess(train$Life.expectancy ~ fitted(mod)), lty=2)
+# condition 1
+
+r <- resid(mod)
+a2<- qqnorm(r)
+qqline(r)
+
+# condition 2 
+a3<- plot(r ~ fitted(mod), main="Fitted Values vs Res", xlab="Fitted", ylab="res.")
+a4<- plot(r ~ train$Total.expenditure, main="Total Expenditure vs Res", xlab="Total Expenditure", ylab="res.")
+a5<- plot(r ~ train$Schooling, main="Schooling vs Res", xlab="Schooling", ylab="res.")
+
+
+```
+
+# Transformations
+```{r}
+#install.packages('car')
+library(car)
+preds = as.vector(subset(train, select=c(4, 14, 22)))
+
+p <- powerTransform(preds, family="bcnPower")
+summary(p)
+
+mod2 <- lm(I(Life.expectancy^3) ~ I(Total.expenditure^0.86) + Status + Schooling, data=train)
+summary(mod2)
+
+qqnorm(rstandard(mod2))
+qqline(rstandard(mod2))
+
+```
+
+# Check for influential observations and outliers
+```{r}
+# influential with Cooks and dffits
+which(cooks.distance(mod2)>qf(0.5, 4, 787-4))
+which(abs(dffits(mod2)) > 2*sqrt(4/787))
+par(mfrow=c(2,2))
+plot(rstandard(mod2)~train$Total.expenditure)
+plot(rstandard(mod2)~train$Schooling)
+qqnorm(rstandard(mod2))
+#qqline(rstandard(mod2))
+
+
+#outliers
+r <- rstandard(mod2)
+# which observations are outliers?
+w2 <- which(r < -2 | r > 2)
+w2
+
+
+plot(train$Life.expectancy~train$Total.expenditure, main="Total Expenditure vs Schooling", xlab="Total Expenditure", ylab="Life Expectancy")
+points(train[w2,4]~train[w2,14], col="blue", pch=19)
+
+plot(train$Life.expectancy~train$Schooling, main="Life Expectancy vs Schooling", xlab="Schooling", ylab="Life Expectancy")
+points(train[w2,4]~train[w2,22], col="blue", pch=19)
+
+```
+
+
+
+# Hypothesis tests and Mulitcolinearity
+```{r}
+summary(mod2)
+vif(mod2)
+mod3 <- lm(I(Life.expectancy^3) ~ Status + Schooling, data=train)
+summary(mod3)
+vif(mod3)
+
+anova(mod3, mod2)
+cbind(summary(mod3)$r.squared,summary(mod2)$adj.r.squared)
+cbind(summary(mod3)$r.squared,summary(mod2)$adj.r.squared)
+
+```
+
+# Verifying results
+```{r}
+
+modtest <-  lm(I(Life.expectancy^3) ~ Status + Schooling, data=test)
+  
+AIC(mod3)
+BIC(mod3)
+
+#previous model
+AIC(mod2)
+BIC(mod2)
+
+vif(modtest)
+AIC(modtest)
+BIC(modtest)
+
+```
+
+# Using automated tests for test set
+```{r}
+stepAIC(lm(Life.expectancy~Status+Total.expenditure+Schooling,data=cleanedLE),
+scope=list(lower=lm(Life.expectancy ~ 1, data=test)),
+direction = "backward", k=2)
+
+```
+
